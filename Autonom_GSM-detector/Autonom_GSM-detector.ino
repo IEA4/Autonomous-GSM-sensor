@@ -96,10 +96,10 @@ void loop() {
     digitalWriteFast(DTR_Pin, HIGH);             // усыпляем SIM800L
     delay(100);                                  // физическая задержка, чтоб всё удачно выключилось
 
-    if(chardge.toInt() > critical_Chardge){
+    if(chardge.toInt() > critical_Chardge){      // если напряжение источника питания выше критического,
       attachInterrupt(0, wakeup, FALLING);        // включение внешнего прерывания  по спаду
       delay(100);
-      if(chardge.toInt() > Chardge_min){
+      if(chardge.toInt() > Chardge_min){            // ... и выше минимального
         power.sleepDelay(time_wake);                // сон на (заданный период) в миллисекундах (до 52 суток)
       }
       else
