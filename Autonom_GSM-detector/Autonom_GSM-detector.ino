@@ -204,7 +204,7 @@ void charge_parsing(){
   if (response.startsWith(F("+CBC:"))){               // если получен ответ о заряде аккума
     byte b_lb = response.indexOf("\r\n");             // находим первый перенос строки
     byte b_com = response.lastIndexOf(",");           // находим последнюю запятую
-    chardge = response.substring(b_com + 1, b_lb);    // извлекаем подстроку от последней запятой до первого переноса строки (+CBC: 0,53,3831 )
+    charge = response.substring(b_com + 1, b_lb);    // извлекаем подстроку от последней запятой до первого переноса строки (+CBC: 0,53,3831 )
   }
 }
 
