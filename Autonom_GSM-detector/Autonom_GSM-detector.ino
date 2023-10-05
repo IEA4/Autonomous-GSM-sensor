@@ -202,7 +202,9 @@ void charge_parsing(){
   response = sendATCommand(F("AT+CBC"), true);
   response.trim();                                    // Убираем лишние пробелы в начале и конце
   if (response.startsWith(F("+CBC:"))){               // если получен ответ о заряде аккума
-    charge = response.substring(11, 15);             // извлекаем подстроку с 11 по 15 символ
+    byte b_lb = response.indexOf("\r\n");             // находим первый перенос строки
+    byte b_com = response.lastIndexOf(",");           // находим последнюю запятую
+    chardge = response.substring(b_com + 1, b_lb);    // извлекаем подстроку от последней запятой до первого переноса строки (+CBC: 0,53,3831 )
   }
 }
 
@@ -212,7 +214,9 @@ void quality_con(){
   response = sendATCommand(F("AT+CSQ"), true);
   response.trim();                                    // Убираем лишние пробелы в начале и конце
   if (response.startsWith(F("+CSQ:"))){               // если получен ответ о заряде аккума
-    qual_con = response.substring(6, 8);             // извлекаем подстроку с 11 по 15 символ
+    byte b_sp = response.indexOf(" ");                // находим первый пробел
+    byte b_com = response.lastIndexOf(",");           // находим последнюю запятую
+    qual_con = response.substring(b_sp + 1, b_com);   // извлекаем подстроку от первого пробела до последней запятой (+CSQ: 14,0)
     sendSMS(innerPhone, "Qual_con: " + qual_con);
   }
 }
