@@ -98,12 +98,8 @@ void loop() {
 
     if(charge.toInt() > critical_Charge){      // если напряжение источника питания выше критического ...
       attachInterrupt(0, wakeup, FALLING);        // включение внешнего прерывания  по спаду
-      delay(100);
-      if(charge.toInt() > Charge_min){            // ... и выше минимального
-        power.sleepDelay(time_wake);                // сон на (заданный период) в миллисекундах (до 52 суток)
-      }
-      else
-        power.sleepDelay(21000);                   // сон примерно на 6 часов, чтоб побескоить сообщением о низком заряде
+      delay(200);
+      power.sleepDelay(time_wake);                // сон на (заданный период) в миллисекундах (до 52 суток)
     }
     else if(charge.toInt() <= critical_Charge){  // если напряжение критически низкое, то внешнее прерывание не включается
       sendSMS(innerPhone, charge + "Low charge. Sleep forever."); //отправляется сообщение с зарядом и фразой о том, что датчик дезактивируется
