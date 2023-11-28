@@ -1,11 +1,11 @@
 #define Charge_min 3570          // напряжение аккумулятора в мВ, ниже которого осущ-ся отправка смс по взведенному периоду пробуждения независимо от срабатывания датчика
-#define critical_Charge 3520     // напряжение, ниже которого отключается внешнее прерывание, модуль усыпляется на несколько дней, пока напряжение не станет ниже допустимого
+#define critical_Charge 3525     // напряжение, ниже которого отключается внешнее прерывание, модуль усыпляется на несколько дней, пока напряжение не станет ниже допустимого
 
-#define time_wake 84660000        // период в мс, по которому будет просыпаться Ардуино и SIM800L  //если поставить ровно сутки (86 400 000) -- на 33мин позже пробуждение
+#define time_wake 85020000        // период в мс, по которому будет просыпаться Ардуино и SIM800L  //если поставить ровно сутки (86 400 000) -- на 33мин позже пробуждение
 #define time_det 20000            // длительность проверки детектором
 #define time_proc 15000           // длительность обработки причины пробуждения
 
-#define Level_IR  850     // порог шума сигнала c ИК-фотодиода, выше которого считать о наличии обнаружения
+#define Level_IR  850     // порог шума сигнала c  ИК-фотодиода, выше которого считать о наличии обнаружения
 
 #define analogPin  A2     // подключен ИК-фотодиод
 #define Ref_Pin    A0     // источник опорного напряжения 5В для ИК-фотодиода, к A0 от него 9.1кОм
@@ -42,15 +42,16 @@ void setup() {
   sendATCommand(F("AT+CMGF=1"), true);                // текстовый формат сообщений
   sendATCommand(F("AT+CSCLK=1"),true);                // спящий режим для SIM800L
 
-  sendSMS(innerPhone, "Qual_con: " + quality_con());  //отсылаем качество связи по смс на номер по умолчанию
+  sendSMS(innerPhone, "Qual_con: " + quality_con());            //отсылаем качество связи по смс на номер по умолчанию
 
   pinModeFast(Ref_Pin, OUTPUT);                   // назначение опорного пина на выхода 5В
   pinModeFast(IR_Pin, OUTPUT);                    // назначение выходом 5В, чтоб ИК-диод светил
 
   pinModeFast(RING_Pin, INPUT_PULLUP);            // к примеру, кнопка подключена к GND и D, без резистора // на RING_Pin пине предустановлено HIGH
 
+  //power.setSystemPrescaler(PRESCALER_2);          // [испол., если выбрано 8МГц] частоту процессора устанавливаем на 8МГц (по умолчанию PRESCALER_1)/* не работает */
+  //power.calibrate(power.getMaxTimeout());         // калибровка тайм-аутов watchdog для sleepDelay  /* не работает */
   power.hardwareDisable(PWR_SPI);                 // выключение указанной периферии
-  power.calibrate(power.getMaxTimeout());         // калибровка тайм-аутов watchdog для sleepDelay  /* походу не работает */
   power.setSleepMode(POWERDOWN_SLEEP);            // установка режима сна
 
   pinModeFast(DTR_Pin, OUTPUT);                   // к DTR пину GSM модуля
@@ -64,7 +65,6 @@ void setup() {
 
 void loop() {
   for(;;){
-    //digitalWriteFast(LED_BUILTIN,HIGH);          // [[[[[[[ для отладки, чтоб воочию видеть активность модуля ]]]]]]]
     digitalWriteFast(DTR_Pin,LOW);               // будим SIM800L
     delay(200);                                  // физическая задержка, чтоб модуль включился
 
@@ -76,11 +76,16 @@ void loop() {
 
     if(flag_det == 1){                        // звонил номер из белого списка или пришло время детектирования
       bool det = detected();                  // проверка ИК-датчиком
-      if(det){                                // при наличии обнаружения
+      if(det){                                // при действительном обнаружении
         sendSMS(innerPhone, charge +  ", 1");      // отправляем смс: [заряд аккум,  1]. Последнее -- знак того, что детектор срабатал
       }
-      else if(det == 0 && (flag_true_call == 1 || charge.toInt() <= Charge_min)){   // в случае низ. напряжения или при звонке номера из белого списка отправляем смс с зарядом
-        sendSMS(innerPhone, charge);
+      else if(det == 0 && (flag_true_call == 1 || charge.toInt() <= Charge_min)){   // при отсут. обнаружения в случае низ. напряжения или при звонке номера из белого списка
+        if(charge.toInt() > critical_Charge){
+          sendSMS(innerPhone, charge);           // отправляем смс с зарядом, если это значение выше критического
+        }
+        else{
+          sendSMS(innerPhone, charge + ". Low charge. Sleep forever" );         // смс с зарядом + "уведомление об отключении"
+        }
       }
     }
 
@@ -88,20 +93,16 @@ void loop() {
     flag_det = 1;                               // разрешаем детектирование по пробуждению
     flag_att = 0;                               // при пробуждении по таймеру запрещаем обработку причины внешнего аппаратного прерывания
 
-    //digitalWriteFast(LED_BUILTIN,LOW);              // [[[[[[[[  для отладки ]]]]]]]
+    digitalWriteFast(DTR_Pin, HIGH);              // усыпляем SIM800L
+    delay(200);                                   // физическая задержка, чтоб всё удачно выключилось
 
-    digitalWriteFast(DTR_Pin, HIGH);             // усыпляем SIM800L
-    delay(200);                                  // физическая задержка, чтоб всё удачно выключилось
-
-    if(charge.toInt() > critical_Charge){      // если напряжение источника питания выше критического ...
-      attachInterrupt(0, wakeup, FALLING);        // включение внешнего прерывания  по спаду
+    if(charge.toInt() > critical_Charge){           // если напряжение источника питания выше критического ...
+      attachInterrupt(0, wakeup, FALLING);          // включение внешнего прерывания  по спаду
       delay(200);
-      power.sleepDelay(time_wake);                // сон на (заданный период) в миллисекундах (до 52 суток)
+      power.sleepDelay(time_wake);                  // сон на (заданный период) в миллисекундах (до 52 суток)
     }
-    else if(charge.toInt() <= critical_Charge){  // если напряжение критически низкое, то внешнее прерывание отключено
-      sendSMS(innerPhone, F("Low charge. Sleep forever")); //отправляется сообщение с зарядом и фразой о том, что датчик дезактивируется
-      delay(200);
-      power.sleep(SLEEP_FOREVER);                       //сон до полного истечения заряда, пока не заменят акум
+    else if(charge.toInt() <= critical_Charge){               // если напряжение критически низкое, то внешнее прерывание отключено
+      power.sleep(SLEEP_FOREVER);                             // сон до полного истечения заряда, пока не заменят акум
     }
   }
 }
@@ -168,11 +169,6 @@ void Process(){
         }
       }
       else if (response.startsWith(F("+CMTI:"))){            // пробуждение было из-за прихода смс
-        flag_det = 0;
-        break;
-      }
-      else if(response.startsWith(F("UNDER-VOLTAGE WARNNING"))){ // пробуждение было из-за уведомления о низком уровне заряда
-        sendSMS(innerPhone, F("SIM800L: UNDER-VOLTAGE WARNING"));  // если удалишь, то поставь в определении функции ниже &message -- сэкономит память
         flag_det = 0;
         break;
       }
