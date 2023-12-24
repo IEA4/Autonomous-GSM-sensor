@@ -2,6 +2,7 @@
 #define critical_Charge 3525     // напряжение, ниже которого отключается внешнее прерывание, модуль усыпляется на несколько дней, пока напряжение не станет ниже допустимого
 
 #define time_wake 85140000        // период в мс, по которому будет просыпаться Ардуино и SIM800L  //если поставить ровно сутки (86 400 000) -- на 33мин позже пробуждение
+
 #define time_det 20000            // длительность проверки детектором
 #define time_proc 15000           // длительность обработки причины пробуждения
 
@@ -42,7 +43,7 @@ void setup() {
   sendATCommand(F("AT+CMGF=1"), true);                // текстовый формат сообщений
   sendATCommand(F("AT+CSCLK=1"),true);                // спящий режим для SIM800L
 
-  sendSMS(innerPhone, "Qual_con: " + quality_con() + ". Voltage now: " + charge_parsing()+ "; critical: "+ (String)critical_Charge);            //на номер по умолчанию отсылаем смс с качеством связи и текущим напряжением
+  quality_con_send();                             // измерение и отправка качества связи на номер по умолчанию
 
   pinModeFast(Ref_Pin, OUTPUT);                   // назначение опорного пина на выхода 5В
   pinModeFast(IR_Pin, OUTPUT);                    // назначение выходом 5В, чтоб ИК-диод светил
@@ -50,7 +51,7 @@ void setup() {
   pinModeFast(RING_Pin, INPUT_PULLUP);            // к примеру, кнопка подключена к GND и D, без резистора // на RING_Pin пине предустановлено HIGH
 
   //power.setSystemPrescaler(PRESCALER_2);          // [испол., если выбрано 8МГц] частоту процессора устанавливаем на 8МГц (по умолчанию PRESCALER_1)/* не работает */
-  //power.calibrate(power.getMaxTimeout());         // калибровка тайм-аутов watchdog для sleepDelay  /* не работает */
+  power.calibrate(power.getMaxTimeout());         // калибровка тайм-аутов watchdog для sleepDelay  /* не работает */
   power.hardwareDisable(PWR_SPI);                 // выключение указанной периферии
   power.setSleepMode(POWERDOWN_SLEEP);            // установка режима сна
 
@@ -104,6 +105,31 @@ void loop() {
     else if(charge.toInt() <= critical_Charge){               // если напряжение критически низкое, то внешнее прерывание отключено
       power.sleep(SLEEP_FOREVER);                             // сон до полного истечения заряда, пока не заменят акум
     }
+  }
+}
+
+// ... ИЗМЕРЕНИЯ ЗАРЯДА АККУМУЛЯТОРА
+String charge_parsing(){
+  String response;
+  response = sendATCommand(F("AT+CBC"), true);
+  response.trim();                                    // Убираем лишние пробелы в начале и конце
+  if (response.startsWith(F("+CBC:"))){               // если получен ответ о заряде аккума
+    byte b_lb = response.indexOf("\r\n");             // находим первый перенос строки
+    byte b_com = response.lastIndexOf(",");           // находим последнюю запятую
+    return response.substring(b_com + 1, b_lb);     // извлекаем подстроку от последней запятой до первого переноса строки (+CBC: 0,53,3831 )
+  }
+}
+
+// ... ИЗМЕРЕНИЯ КАЧЕСТВА СВЯЗИ И ОТПРАВКИ ЗНАЧЕНИЯ НА НОМЕР ПО УМОЛЧАНИЮ
+void quality_con_send(){
+  String response, qual_con;
+  response = sendATCommand(F("AT+CSQ"), true);
+  response.trim();                                    // Убираем лишние пробелы в начале и конце
+  if (response.startsWith(F("+CSQ:"))){               // если получен ответ о заряде аккумаif (response.startsWith(F("+CSQ:"))){               // если получен ответ о заряде аккума
+    byte b_sp = response.indexOf(" ");                // находим первый пробел
+    byte b_com = response.lastIndexOf(",");           // находим последнюю запятую
+    qual_con = response.substring(b_sp + 1, b_com);   // извлекаем подстроку от первого пробела до последней запятой (+CSQ: 14,0)
+    sendSMS(innerPhone, "Qual_con: " + qual_con);     // отправка качества связи в смс
   }
 }
 
@@ -188,30 +214,6 @@ void sendSMS(String &phone, String message){
   sendATCommand("AT+CMGS=\"" + phone + "\"", true);             // Переходим в режим ввода текстового сообщения
   sendATCommand(message + "\r\n" + (String)((char)26), true);   // После текста отправляем перенос строки и Ctrl+Z
   sendATCommand(F("AT+CMGDA=\"DEL ALL\""), true);               // Удалить все сообщения, чтобы не забивали память модуля
-}
-
-// ... ИЗМЕРЕНИЯ ЗАРЯДА АККУМУЛЯТОРА
-String charge_parsing(){
-  String response;
-  response = sendATCommand(F("AT+CBC"), true);
-  response.trim();                                    // Убираем лишние пробелы в начале и конце
-  if (response.startsWith(F("+CBC:"))){               // если получен ответ о заряде аккума
-    byte b_lb = response.indexOf("\r\n");             // находим первый перенос строки
-    byte b_com = response.lastIndexOf(",");           // находим последнюю запятую
-    return response.substring(b_com + 1, b_lb);     // извлекаем подстроку от последней запятой до первого переноса строки (+CBC: 0,53,3831 )
-  }
-}
-
-// ... ИЗМЕРЕНИЯ КАЧЕСТВА СВЯЗИ
-String quality_con(){
-  String response;
-  response = sendATCommand(F("AT+CSQ"), true);
-  response.trim();                                    // Убираем лишние пробелы в начале и конце
-  if (response.startsWith(F("+CSQ:"))){               // если получен ответ о заряде аккума
-    byte b_sp = response.indexOf(" ");                // находим первый пробел
-    byte b_com = response.lastIndexOf(",");           // находим последнюю запятую
-    return response.substring(b_sp + 1, b_com);   // извлекаем подстроку от первого пробела до последней запятой (+CSQ: 14,0)
-  }
 }
 
 //... ОБРАБОТКА AT-КОМАНДЫ

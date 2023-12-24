@@ -11,8 +11,11 @@ void setup(){
   Serial.flush();                  //  ждём, когда все старые данные пройдут
   
   pinModeFast(Ref_Pin, OUTPUT);       // назначение опорного пина на выхода 5В
+  digitalWriteFast(Ref_Pin, HIGH);                 // подаём опорное питание на ИК-фоторезистор
+  
   pinModeFast(IR_Pin, OUTPUT);        // назначение выходом 5В, чтоб ИК-диод светил
-
+  digitalWriteFast(IR_Pin, HIGH);
+  
   pinMode(LED_BUILTIN, OUTPUT);       // используем для индикации на Arduino
 }
  

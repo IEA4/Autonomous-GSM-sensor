@@ -3,7 +3,7 @@ AT+CBC -- заряд аккума
 AT+CSQ -- качество связи (от 10 -- хорошо)
 */
 #include <SoftwareSerial.h>
-SoftwareSerial SIM800(7, 9);        // 7 - пин D7 Arduino связан с пином TX SIM800L, 9 - пин D9 Arduino связан RX пином SIM800L
+SoftwareSerial SIM800(7,9);        // 7 - пин D7 Arduino связан с пином TX SIM800L, 9 - пин D9 Arduino связан RX пином SIM800L
 void setup() {
   Serial.begin(9600);               // Скорость обмена данными с компьютером
   Serial.println("Start!");
