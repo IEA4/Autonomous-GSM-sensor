@@ -78,7 +78,12 @@ void loop() {
     if(flag_det == 1){                        // звонил номер из белого списка или пришло время детектирования
       bool det = detected();                  // проверка ИК-датчиком
       if(det){                                // при действительном обнаружении
-        sendSMS(innerPhone, charge +  ", 1");      // отправляем смс: [заряд аккум,  1]. Последнее -- знак того, что детектор срабатал
+        if (charge.toInt() > critical_Charge){       // если заряд аккумулятора выше критического
+          sendSMS(innerPhone, charge +  ", 1");      // отправляем смс: [заряд аккум,  1]. Последнее -- знак того, что детектор срабатал
+        }
+        else if(charge.toInt() <= critical_Charge){
+          sendSMS(innerPhone, charge +  ", 1. Low charge. Sleep forever");      // отправляем смс: [заряд аккум,  1]. Последнее -- знак того, что детектор срабатал
+        }
       }
       else if(det == 0 && (flag_true_call == 1 || charge.toInt() <= Charge_min)){   // при отсут. обнаружения в случае низ. напряжения или при звонке номера из белого списка
         if(charge.toInt() > critical_Charge){
