@@ -1,19 +1,20 @@
-#define Charge_min 3570          // напряжение аккумулятора в мВ, ниже которого осущ-ся отправка смс по взведенному периоду пробуждения независимо от срабатывания датчика
-#define critical_Charge 3525     // напряжение, ниже которого отключается внешнее прерывание, модуль усыпляется на несколько дней, пока напряжение не станет ниже допустимого
+#define Charge_min 3600          // напряжение аккумулятора в мВ, ниже которого осущ-ся отправка смс по взведенному периоду пробуждения независимо от срабатывания датчика
+#define critical_Charge 3550     // напряжение, ниже которого датчик отключается
 
-#define time_wake 85140000        // период в мс, по которому будет просыпаться Ардуино и SIM800L  //если поставить ровно сутки (86 400 000) -- на 33мин позже пробуждение
+#define time_wake 85140000       // период в мс, по которому будет просыпаться Ардуино и SIM800L  //если поставить ровно сутки (86 400 000) -- на 33мин позже пробуждение
 
-#define time_det 20000            // длительность проверки детектором
-#define time_proc 15000           // длительность обработки причины пробуждения
+#define time_det 20000           // длительность проверки детектором
+#define time_proc 15000          // длительность обработки причины пробуждения
 
-#define Level_IR  850     // порог шума сигнала c  ИК-фотодиода, выше которого считать о наличии обнаружения
+#define Level_IR  850         // порог шума сигнала c  ИК-фотодиода, выше которого считать о наличии обнаружения
 
-#define analogPin  A2     // подключен ИК-фотодиод
-#define Ref_Pin    A0     // источник опорного напряжения 5В для ИК-фотодиода, к A0 от него 9.1кОм
-#define IR_Pin     A4     // ИК-светодиод, вкл/выкл 5V
+#define analogPin  A2         // подключен ИК-фотодиод
+#define Ref_Pin    A0         // источник опорного напряжения 5В для ИК-фотодиода, к A0 от него 9.1кОм
+#define IR_Pin     A4         // ИК-светодиод, вкл/выкл 5V
 
-#define RING_Pin   2      // внешнее прерывание для Arduino из SIM800L
-#define DTR_Pin    5      // DTR пин SIM800L для усыпления/пробуждения модуля
+#define RING_Pin   2          // внешнее прерывание для Arduino из SIM800L
+#define DTR_Pin    5          // DTR пин SIM800L для усыпления/пробуждения модуля
+#define samoblock_PIN  12     // пин самооблокировки питания
 
 #include <FastDefFunc.h>              // библиотека для убыстрения функций: pinMode, digitalWrite, ...Read, analogWrite, ...Read
 
@@ -30,22 +31,41 @@ bool flag_true_call;                    //   ...  звонка номера из
 volatile bool flag_att;                 //   ...  пробуждения по внешнему прерыванию
 
 void setup() {
+  pinModeFast(samoblock_PIN, OUTPUT);            // пин управления питания на выход
+  digitalWriteFast(samoblock_PIN, HIGH);         //             ...        подаём высокий уровень для того, чтобы питание приходило
+
+  pinModeFast(LED_BUILTIN,OUTPUT);               // для индикации на Arduino
+  digitalWriteFast(LED_BUILTIN,HIGH);            //            .....          включаем встроенный светодиод
+
   Serial.begin(9600);                   // скорость обмена данными монитора порта с компьютером
   SIM800.begin(9600);                   // ............................    SIM800 с компьютером
   Serial.flush();                       // ждём, когда все старые данные пройдут
 
-  delay(20000);                         // физ.задержка, чтоб в случае подачи питания сразу и ардуино выключть его, а также при случайных перезагрузках успеть найти сеть
+  delay(20000);                         // физ.задержка, чтоб SIM800L успел найти сеть
+                                        //       ...  бо`льшее время не имеет смысла ждать, лучше перезагрузить самому отключив питание
+  sendATCommand(F("AT"), true);         // проверка готовности модуля к работе и автонастройка скорости
+  sendATCommand(F("ATE0"), true);       // выключаем ECHO Mode
 
-  sendATCommand(F("AT"), true);                       // проверка готовности модуля к работе и автонастройка скорости
-  sendATCommand(F("AT+CLIP=1"), true);                // автоопределитель номера во время входящего звонка
-  sendATCommand(F("ATE0"), true);                     // выключаем ECHO Mode
-  sendATCommand(F("AT+CNETLIGHT=0"), true);           // вырубаем светодиод-индикатор на SIM800L
-  sendATCommand(F("AT+CMGF=1"), true);                // текстовый формат сообщений
-  sendATCommand(F("AT+CSCLK=1"),true);                // спящий режим для SIM800L
+  net_registration();                   // проверка регистрации в мобильной сети
+
+  unsigned long t = millis();
+  unsigned long TimerOn = millis();
+  while (millis() - t <= 3000){                 // в течение 3 секунд отмечаем успех регистрации в сети
+    if(millis() - TimerOn >= 200){
+      digitalWriteFast(LED_BUILTIN, !digitalReadFast(LED_BUILTIN)); // мигаем светодиодом
+      TimerOn = millis();
+    }
+  }
+  digitalWriteFast(LED_BUILTIN, LOW);
+
+  sendATCommand(F("AT+CNETLIGHT=0"), true);      // выкл. светодиод-индикатор на SIM800L
+  sendATCommand(F("AT+CLIP=1"), true);           // автоопределитель номера во время входящего звонка
+  sendATCommand(F("AT+CMGF=1"), true);           // текстовый формат сообщений
+  sendATCommand(F("AT+CSCLK=1"),true);           // спящий режим для SIM800L
 
   quality_con_send();                             // измерение и отправка качества связи на номер по умолчанию
 
-  pinModeFast(Ref_Pin, OUTPUT);                   // назначение опорного пина на выхода 5В
+  pinModeFast(Ref_Pin, OUTPUT);                   // назначение опорного пина на выход 5В
   pinModeFast(IR_Pin, OUTPUT);                    // назначение выходом 5В, чтоб ИК-диод светил
 
   pinModeFast(RING_Pin, INPUT_PULLUP);            // к примеру, кнопка подключена к GND и D, без резистора // на RING_Pin пине предустановлено HIGH
@@ -57,11 +77,7 @@ void setup() {
 
   pinModeFast(DTR_Pin, OUTPUT);                   // к DTR пину GSM модуля
   digitalWriteFast(DTR_Pin,HIGH);                 // выключаем SIM800L (чтоб потом пробуждать каждый раз при заходе в бесконечный цикл while(;;))
-
-  pinModeFast(LED_BUILTIN,OUTPUT);               // для индикации на Arduino
-  digitalWriteFast(LED_BUILTIN,HIGH);            // включаем
-  delay(5000);                                   //       ...на 5 секунд
-  digitalWriteFast(LED_BUILTIN,LOW);             //                      ... и выключаем
+  delay(200);                                     // Физическая задержка, чтоб успел уйти в сон SIM800L
 }
 
 void loop() {
@@ -73,25 +89,31 @@ void loop() {
       Process();                                 // обрабатываем причину этого пробуждения
     }
 
-    String charge = charge_parsing();                // измеряем заряд аккумулятора
+    if (flag_att == 0){                           // если пробуждение по внутреннему прерыванию(по таймеру сна)
+      net_registration();                         // проверяем, не слетела ли сеть
+    }
 
-    if(flag_det == 1){                        // звонил номер из белого списка или пришло время детектирования
-      bool det = detected();                  // проверка ИК-датчиком
-      if(det){                                // при действительном обнаружении
-        if (charge.toInt() > critical_Charge){       // если заряд аккумулятора выше критического
-          sendSMS(innerPhone, charge +  ", 1");      // отправляем смс: [заряд аккум,  1]. Последнее -- знак того, что детектор срабатал
-        }
-        else if(charge.toInt() <= critical_Charge){
-          sendSMS(innerPhone, charge +  ", 1. Low charge. Sleep forever");      // отправляем смс: [заряд аккум,  1]. Последнее -- знак того, что детектор срабатал
-        }
+    bool det = 0;
+    if(flag_det == 1){                          // звонил номер из белого списка или пришло время детектирования
+      det = detected();                         // проверка ИК-датчиком
+    }
+
+    String charge = charge_parsing();               // измеряем заряд аккумулятора
+
+    if(det){                                        // при действительном обнаружении
+      if (charge.toInt() > critical_Charge){        // если заряд аккумулятора выше критического
+        sendSMS(innerPhone, charge +  ", 1");       // отправляем смс: [заряд аккум,  1]. Последнее -- знак того, что детектор срабатал
       }
-      else if(det == 0 && (flag_true_call == 1 || charge.toInt() <= Charge_min)){   // при отсут. обнаружения в случае низ. напряжения или при звонке номера из белого списка
-        if(charge.toInt() > critical_Charge){
-          sendSMS(innerPhone, charge);           // отправляем смс с зарядом, если это значение выше критического
-        }
-        else{
-          sendSMS(innerPhone, charge + ". Low charge. Sleep forever" );         // смс с зарядом + "уведомление об отключении"
-        }
+      else if(charge.toInt() <= critical_Charge){
+        sendSMS(innerPhone, charge +  ", 1. Low charge. Sleep forever");      // отправляем смс: [заряд аккум,  1]. Последнее -- знак того, что детектор срабатал
+      }
+    }
+    else if(det == 0 && (flag_true_call == 1 || charge.toInt() <= Charge_min)){   // при отсут. обнаружения в случае низ. напряжения или при звонке номера из белого списка
+      if(charge.toInt() > critical_Charge){
+        sendSMS(innerPhone, charge);           // отправляем смс с зарядом, если это значение выше критического
+      }
+      else{
+        sendSMS(innerPhone, charge + ". Low charge. Sleep forever" );         // смс с зарядом + "уведомление об отключении"
       }
     }
 
@@ -99,16 +121,15 @@ void loop() {
     flag_det = 1;                               // разрешаем детектирование по пробуждению
     flag_att = 0;                               // при пробуждении по таймеру запрещаем обработку причины внешнего аппаратного прерывания
 
-    digitalWriteFast(DTR_Pin, HIGH);              // усыпляем SIM800L
-    delay(200);                                   // физическая задержка, чтоб всё удачно выключилось
-
     if(charge.toInt() > critical_Charge){           // если напряжение источника питания выше критического ...
+      digitalWriteFast(DTR_Pin, HIGH);              // усыпляем SIM800L
+      delay(200);                                   // физическая задержка, чтоб всё удачно выключилось
       attachInterrupt(0, wakeup, FALLING);          // включение внешнего прерывания  по спаду
       delay(200);
       power.sleepDelay(time_wake);                  // сон на (заданный период) в миллисекундах (до 52 суток)
     }
-    else if(charge.toInt() <= critical_Charge){               // если напряжение критически низкое, то внешнее прерывание отключено
-      power.sleep(SLEEP_FOREVER);                             // сон до полного истечения заряда, пока не заменят акум
+    else if(charge.toInt() <= critical_Charge){     // если напряжение критически низкое, то внешнее прерывание отключено
+      digitalWriteFast(samoblock_PIN, LOW);         // отключаем питание (самоблокировка питания)
     }
   }
 }
@@ -136,6 +157,53 @@ void quality_con_send(){
     qual_con = response.substring(b_sp + 1, b_com);   // извлекаем подстроку от первого пробела до последней запятой (+CSQ: 14,0)
     sendSMS(innerPhone, "Qual_con: " + qual_con);     // отправка качества связи в смс
   }
+}
+
+// ... ПРОВЕРКИ РЕГИСТРАЦИИ В СЕТИ
+void net_registration(){
+  bool flag_rst = 0;           // флажок перезагрузки GSM-модуля
+  for (byte j = 0; j < 4; ++j){
+    if(net_find()){                 // если сеть имеется
+      break;                        //       ...     выходим из цикла с поиском сети
+    }
+    if (j == 2 & flag_rst == 0){                 // если число запросов больше 3 и не было попытки перезагрузить gsm-модуль(это значит после вкл. прошло 20+4*5 = 40 секунд, а сети нет)
+      sendATCommand(F("AT+CFUN=1,1"), true);    //  попробовать перезагрузить SIM800L с полным функционалом: возможны и звонки и смс
+      sendATCommand(F("ATE0"), true);           //  после перезагрузки выключаем ECHO Mode
+      flag_rst = 1;                             // отмечаем, что перезагрузка была
+      j = 0;                                    // зануляем счётчик попыток
+    }
+    else if (j == 3 & flag_rst == 1){            // если даже после перезагрузки gsm-модуля и 3 интервалов между запросами нет регистрации в сети
+      digitalWriteFast(samoblock_PIN, LOW);     //  ...  отключается питание (самоблокировка питания) //нет сети
+    }
+    unsigned long t_delay = millis();                    // заводим таймер ожидания
+    while(millis() - t_delay < 5000);           // ждём 5 секунд для отправки следующего запроса
+  }
+  if(flag_rst == 1){                            //  если сеть была найдена после перезагрузки gsm-модуля
+    sendATCommand(F("AT"), true);                  // автонастройка скорости
+    sendATCommand(F("AT+CNETLIGHT=0"), true);      // вырубаем светодиод-индикатор на SIM800L
+    sendATCommand(F("AT+CLIP=1"), true);           // автоопределитель номера во время входящего звонка
+    sendATCommand(F("AT+CMGF=1"), true);           // текстовый формат сообщений
+    sendATCommand(F("AT+CSCLK=1"),true);           // спящий режим для SIM800L
+  }
+}
+
+// ... определения типа регистрации в сети
+bool net_find(){
+  String response;
+  bool flag_net_find = 0;
+  response = sendATCommand(F("AT+CREG?"), true);
+  response.trim();                                    // Убираем лишние пробелы в начале и конце
+  if (response.startsWith(F("+CREG:"))){              // если получен ответ о заряде аккума
+    byte b_lb = response.indexOf("\r\n");             // находим первый перенос строки
+    byte b_com = response.lastIndexOf(",");           // находим последнюю запятую
+    if (response.substring(b_com + 1, b_lb) == "1"){         // извлекаем подстроку от последней запятой до первого переноса строки (+CREG: 0,1)
+      flag_net_find = 1;                              // отмечаем факт наличия сети
+    }
+    else {
+      flag_net_find = 0;
+    }
+  }
+  return flag_net_find;
 }
 
 // функция детектирования
