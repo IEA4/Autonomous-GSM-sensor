@@ -82,17 +82,16 @@ void setup() {
 
 void loop() {
   for(;;){
+    digitalWriteFast(LED_BUILTIN,HIGH);          // [[[[[[[ для отладки, чтоб воочию видеть активность модуля ]]]]]]]
     digitalWriteFast(DTR_Pin,LOW);               // будим SIM800L
     delay(200);                                  // физическая задержка, чтоб модуль включился
 
     if (flag_att == 1){                          // если пробуждение было по внешнему прерыванию
-      Process();                                 // обрабатываем причину этого пробуждения
+      att_def();                                 // обрабатываем причину этого пробуждения
     }
 
-    if (flag_att == 0){                           // если пробуждение по внутреннему прерыванию(по таймеру сна)
-      net_registration();                         // проверяем, не слетела ли сеть
-    }
-
+    net_registration();                         // проверяем, не слетела ли сеть
+    
     bool det = 0;
     if(flag_det == 1){                          // звонил номер из белого списка или пришло время детектирования
       det = detected();                         // проверка ИК-датчиком
@@ -120,6 +119,9 @@ void loop() {
     flag_true_call = 0;                         // кладём флажок звонка номера из белого списка
     flag_det = 1;                               // разрешаем детектирование по пробуждению
     flag_att = 0;                               // при пробуждении по таймеру запрещаем обработку причины внешнего аппаратного прерывания
+
+    digitalWriteFast(LED_BUILTIN,LOW);          // [[[[[[[ для отладки, чтоб воочию видеть активность модуля ]]]]]]]
+
 
     if(charge.toInt() > critical_Charge){           // если напряжение источника питания выше критического ...
       digitalWriteFast(DTR_Pin, HIGH);              // усыпляем SIM800L
@@ -162,7 +164,7 @@ void quality_con_send(){
 // ... ПРОВЕРКИ РЕГИСТРАЦИИ В СЕТИ
 void net_registration(){
   bool flag_rst = 0;           // флажок перезагрузки GSM-модуля
-  for (byte j = 0; j < 4; ++j){
+  for (byte j = 0; j < 4; j++){
     if(net_find()){                 // если сеть имеется
       break;                        //       ...     выходим из цикла с поиском сети
     }
@@ -193,7 +195,7 @@ bool net_find(){
   bool flag_net_find = 0;
   response = sendATCommand(F("AT+CREG?"), true);
   response.trim();                                    // Убираем лишние пробелы в начале и конце
-  if (response.startsWith(F("+CREG:"))){              // если получен ответ о заряде аккума
+  if (response.startsWith(F("+CREG:"))){              // если получен ответ о регистрации в сети
     byte b_lb = response.indexOf("\r\n");             // находим первый перенос строки
     byte b_com = response.lastIndexOf(",");           // находим последнюю запятую
     if (response.substring(b_com + 1, b_lb) == "1"){         // извлекаем подстроку от последней запятой до первого переноса строки (+CREG: 0,1)
